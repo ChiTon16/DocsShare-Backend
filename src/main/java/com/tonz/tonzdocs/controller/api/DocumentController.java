@@ -14,10 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -90,6 +87,22 @@ public class DocumentController {
                     .body(Map.of("error", "Token không hợp lệ hoặc hết hạn", "details", e.getMessage()));
         }
     }
+
+    @GetMapping("/search")
+    public ResponseEntity<?> searchDocuments(@RequestParam("q") String keyword) {
+        List<Document> results = documentRepo.findByTitleContainingIgnoreCase(keyword);
+
+        List<DocumentDTO> dtos = results.stream()
+                .map(DocumentService::toDTO)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(dtos);
+    }
+
+
+
+
+
 
 
 }

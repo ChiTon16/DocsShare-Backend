@@ -22,4 +22,25 @@ public class AdminController {
         return "admin/userList"; // file: src/main/resources/templates/admin/user-list.html
     }
 
+    @GetMapping("/subjects")
+    public String subjectListPage(Model model) {
+        // Truyền dữ liệu ví dụ
+        model.addAttribute("title", "Quản lý môn học");
+        return "admin/subject"; // file: src/main/resources/templates/admin/subject.html
+    }
+
+    @GetMapping("/major")
+    public String majorListPage(Model model) {
+        // Truyền dữ liệu ví dụ
+        model.addAttribute("title", "Quản lý ngành");
+        return "admin/major"; // file: src/main/resources/templates/admin/subject.html
+    }
+
+    @GetMapping("/schools")
+    public String schoolListPage(Model model) {
+        // Truyền dữ liệu ví dụ
+        model.addAttribute("title", "Quản lý trường");
+        return "admin/school";
+    }
+
 }

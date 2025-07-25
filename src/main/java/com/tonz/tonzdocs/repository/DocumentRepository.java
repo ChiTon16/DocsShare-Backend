@@ -7,4 +7,9 @@ import java.util.List;
 
 public interface DocumentRepository extends JpaRepository<Document, Integer> {
     List<Document> findByUserUserId(Integer userId);
+
+    List<Document> findByTitleContainingIgnoreCase(String keyword);
+
+    List<Document> findBySubject_SubjectId(Integer subjectId);
+
 }

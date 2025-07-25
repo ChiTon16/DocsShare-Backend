@@ -3,6 +3,7 @@ package com.tonz.tonzdocs.config;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -14,33 +15,56 @@ public class SecurityConfig {
     private JwtFilter jwtFilter; // Bộ lọc để đọc JWT từ header
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    @Order(1)
+    public SecurityFilterChain apiSecurity(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable()) // Tắt CSRF
+                .securityMatcher("/api/**") // Chỉ áp dụng cho /api/**
+                .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/documents/**").authenticated() // yêu cầu JWT token
-                        .requestMatchers("/", "/hello", "/login", "/api/auth/**", "/api/documents").permitAll()
-                        .requestMatchers("/admin/**", "/api/admin/**").hasRole("ADMIN") // chỉ ROLE_ADMIN mới được vào
+                        .requestMatchers("/api/auth/**", "/api/documents", "/api/subjects").permitAll()
+                        .requestMatchers("/admin/api/**").hasRole("ADMIN") // Yêu cầu ROLE_ADMIN cho tất cả /admin/api/**
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // không dùng session
-                );
-//                .formLogin(form -> form
-//                        .loginPage("/login")
-//                        .loginProcessingUrl("/login")
-//                        .defaultSuccessUrl("/admin/dashboard", true)
-//                        .failureUrl("/login?error=true")
-//                        .permitAll()
-//                )
-//                .logout(logout -> logout
-//                        .logoutUrl("/logout")
-//                        .logoutSuccessUrl("/login?logout")
-//                        .permitAll()
-//                );
-
-        http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class); // Thêm bộ lọc JWT
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
+
+    @Bean
+    @Order(2)
+    public SecurityFilterChain webSecurity(HttpSecurity http) throws Exception {
+        http
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/", "/login", "/login?logout", "/error").permitAll()
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
+                        // Token login
+                        .requestMatchers("/api/**").authenticated()
+                        .anyRequest().authenticated()
+                )
+                .formLogin(form -> form
+                        .loginPage("/login")
+                        .loginProcessingUrl("/login")
+                        .defaultSuccessUrl("/admin/dashboard", true)
+                        .permitAll()
+                )
+                .logout(logout -> logout
+                        .logoutUrl("/logout")
+                        .logoutSuccessUrl("/login?logout") // Chuyển hướng sau khi đăng xuất
+                        .invalidateHttpSession(true) // Xóa session cho web
+                        .deleteCookies("JSESSIONID") // Xóa cookie session (nếu có)
+                        .permitAll()
+                )
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                )
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/admin/api/**")); // Bỏ qua CSRF cho /admin/api/**
+
+
+        return http.build();
+    }
+
+
 }
