@@ -67,5 +67,13 @@ public class AuthController {
         return authService.login(request);
     }
 
+    @GetMapping("/refresh-token")
+    public ResponseEntity<?> refreshToken(
+            @CookieValue(name = "refreshToken", required = false) String refreshCookie,
+            @RequestHeader(value = "Authorization", required = false) String authHeader
+    ) {
+        return authService.refreshToken(refreshCookie, authHeader);
+    }
+
 
 }

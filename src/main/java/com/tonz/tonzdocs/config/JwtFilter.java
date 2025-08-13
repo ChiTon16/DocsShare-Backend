@@ -32,37 +32,39 @@ public class JwtFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
+        final String path = request.getRequestURI();
+        final String method = request.getMethod();
+
+        // Bỏ qua preflight và các endpoint auth (login/refresh/register)
+        if ("OPTIONS".equalsIgnoreCase(method) || path.startsWith("/api/auth/")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         final String authHeader = request.getHeader("Authorization");
 
         try {
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 String token = authHeader.substring(7);
-                String email = jwtUtil.extractEmail(token);
 
-                log.debug("Extracted Email from Token: {}", email);
-
+                String email = jwtUtil.extractEmailFromAccess(token); // chỉ parse ACCESS
                 if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(email);
 
-                    if (jwtUtil.validateToken(token, userDetails)) {
+                    if (jwtUtil.validateAccessToken(token, userDetails)) {
                         UsernamePasswordAuthenticationToken authToken =
                                 new UsernamePasswordAuthenticationToken(
                                         userDetails, null, userDetails.getAuthorities()
                                 );
                         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                         SecurityContextHolder.getContext().setAuthentication(authToken);
-
-                        log.debug("Authenticated user: {}", userDetails.getUsername());
                     } else {
-                        log.warn("Invalid JWT token");
+                        log.warn("Invalid or expired access token");
                     }
                 }
-            } else {
-                log.debug("No Bearer token found in Authorization header");
             }
         } catch (Exception e) {
-            log.error("Exception in JWT filter: {}", e.getMessage(), e);
+            log.error("JWT filter error: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);
