@@ -10,6 +10,8 @@ public class UserDTO {
     private String role;
     private boolean active;
 
+    private String avatarUrl;
+
     // Constructors
     public UserDTO() {}
 
@@ -49,4 +51,6 @@ public class UserDTO {
     public void setRole(String role) { this.role = role; }
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 }

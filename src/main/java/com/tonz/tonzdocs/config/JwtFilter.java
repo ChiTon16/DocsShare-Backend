@@ -32,11 +32,11 @@ public class JwtFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        final String path = request.getRequestURI();
+        final String path   = request.getServletPath();
         final String method = request.getMethod();
 
         // Bỏ qua preflight và các endpoint auth (login/refresh/register)
-        if ("OPTIONS".equalsIgnoreCase(method) || path.startsWith("/api/auth/")) {
+        if ("OPTIONS".equalsIgnoreCase(method) || isPublic(path, method)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -68,5 +68,20 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isPublic(String path, String method) {
+        // chỉ những endpoint thật sự public
+        if ("POST".equalsIgnoreCase(method) &&
+                ("/api/auth/login".equals(path) || "/api/auth/register".equals(path))) {
+            return true;
+        }
+        if ("/api/auth/refresh-token".equals(path)) return true;
+        // các API public khác (nếu bạn có)
+        if ("GET".equalsIgnoreCase(method) &&
+                ("/api/schools".equals(path) || "/api/majors".equals(path))) {
+            return true;
+        }
+        return false; // /api/auth/me KHÔNG public
     }
 }

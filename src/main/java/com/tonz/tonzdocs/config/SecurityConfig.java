@@ -60,7 +60,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
 
                         // Các endpoint mở
-                        .requestMatchers("/api/auth/**", "/api/documents", "/api/subjects").permitAll()
+                        .requestMatchers("/api/auth/**", "/api/documents", "/api/subjects", "/api/schools/**", "/api/majors, \"/api/public/**\"").permitAll()
 
                         // Còn lại cần JWT
                         .anyRequest().authenticated()

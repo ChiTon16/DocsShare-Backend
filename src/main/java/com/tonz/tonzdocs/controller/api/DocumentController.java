@@ -8,32 +8,44 @@ import com.tonz.tonzdocs.repository.DocumentRepository;
 import com.tonz.tonzdocs.repository.RecentViewRepository;
 import com.tonz.tonzdocs.repository.UserRepository;
 import com.tonz.tonzdocs.service.DocumentService;
-import com.tonz.tonzdocs.service.RecentViewService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/documents")
+@RequiredArgsConstructor
 public class DocumentController {
 
-    @Autowired
-    private DocumentRepository documentRepo;
+    private final DocumentRepository documentRepo;
+    private final UserRepository userRepo;
+    private final RecentViewRepository recentViewRepo;
+    private final JwtUtil jwtUtil;
+    private final DocumentService documentService;
 
-    @Autowired
-    private UserRepository userRepo;
+    // ---- Thumbnail: trả THẲNG ảnh PNG (không 302) ----
+    @GetMapping(value = "/{documentId}/thumbnail", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> getThumbnail(
+            @PathVariable Long documentId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "400") int width
+    ) {
+        byte[] png = documentService.getThumbnail(documentId, page, width);
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_PNG)
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(7)).cachePublic())
+                .body(png);
+    }
 
-    @Autowired
-    private RecentViewRepository recentViewRepo;
-
-    @Autowired
-    private JwtUtil jwtUtil;
-
-
+    // ---- Các API khác giữ nguyên ----
     @GetMapping
     public List<DocumentDTO> getAllDocuments() {
         List<Document> documents = documentRepo.findAll();
@@ -49,7 +61,6 @@ public class DocumentController {
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Thiếu token"));
             }
-
             String token = authHeader.replace("Bearer ", "");
             String email = jwtUtil.extractEmail(token);
 
@@ -57,7 +68,6 @@ public class DocumentController {
             if (userOpt.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Token không hợp lệ"));
             }
-
             var user = userOpt.get();
 
             return documentRepo.findById(id).map(doc -> {
@@ -91,19 +101,7 @@ public class DocumentController {
     @GetMapping("/search")
     public ResponseEntity<?> searchDocuments(@RequestParam("q") String keyword) {
         List<Document> results = documentRepo.findByTitleContainingIgnoreCase(keyword);
-
-        List<DocumentDTO> dtos = results.stream()
-                .map(DocumentService::toDTO)
-                .collect(Collectors.toList());
-
+        List<DocumentDTO> dtos = results.stream().map(DocumentService::toDTO).collect(Collectors.toList());
         return ResponseEntity.ok(dtos);
     }
-
-
-
-
-
-
-
 }
-

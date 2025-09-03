@@ -20,6 +20,7 @@ public class RegisterRequest {
     private Integer roleId;
     private Integer schoolId;
     private Integer majorId;
+    private String avatarUrl;
 
     public Integer getMajorId() {
         return majorId;
@@ -64,6 +65,14 @@ public class RegisterRequest {
 
     public Integer getSchoolId() {
         return schoolId;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 
     public void setSchoolId(Integer schoolId) {

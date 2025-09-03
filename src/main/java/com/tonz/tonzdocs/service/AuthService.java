@@ -15,7 +15,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Map;
@@ -31,6 +35,7 @@ public class AuthService {
     @Autowired private MajorRepository majorRepo;
 
     @Autowired private JwtUtil jwtUtil;
+    @Autowired private UploadService uploadService; // 👈 dùng service có sẵn của bạn
 
     /* =========================================================
      * LOGIN: trả về { token, refreshToken } + (tùy chọn) set cookie refreshToken (HttpOnly)
@@ -133,40 +138,68 @@ public class AuthService {
     /* =========================================================
      * REGISTER giữ nguyên (chỉ tidy nhẹ)
      * ========================================================= */
-    public ResponseEntity<?> register(RegisterRequest request) {
-        // 1. Kiểm tra email đã tồn tại chưa
+    public ResponseEntity<?> register(RegisterRequest request, MultipartFile avatar) {
         if (userRepo.findByEmail(request.getEmail()).isPresent()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Collections.singletonMap("error", "Email đã được sử dụng"));
         }
 
-        // 2. Tạo user mới
         User user = new User();
         user.setEmail(request.getEmail());
         user.setName(request.getName());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setActive(true);
 
-        // 3. Gán role
         Role role = roleRepo.findById(request.getRoleId())
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy role với ID: " + request.getRoleId()));
         user.setRole(role);
 
-        // 4. Gán trường (nếu có)
         if (request.getSchoolId() != null) {
             School school = schoolRepo.findById(request.getSchoolId())
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy trường học với ID: " + request.getSchoolId()));
             user.setSchool(school);
         }
-
-        // 5. Gán ngành học (nếu có)
         if (request.getMajorId() != null) {
             majorRepo.findById(request.getMajorId()).ifPresent(user::setMajor);
         }
 
-        // 6. Lưu user vào DB
+        // Lưu lần 1 để có userId
         userRepo.save(user);
 
+        // Nếu có file avatar -> upload Cloudinary & update URL
+        if (avatar != null && !avatar.isEmpty()) {
+            try {
+                String publicId = "user_" + user.getUserId(); // dễ overwrite khi update
+                String secureUrl = uploadService.uploadAvatar(avatar, publicId);
+                user.setAvatarUrl(secureUrl);
+                userRepo.save(user); // update URL
+            } catch (IOException ex) {
+                // Không fail đăng ký vì upload lỗi; có thể log warning nếu muốn
+                // log.warn("Upload avatar failed", ex);
+            }
+        } else if (request.getAvatarUrl() != null && !request.getAvatarUrl().isBlank()) {
+            // Trường hợp FE đã có sẵn link (ít dùng khi đã upload qua server)
+            user.setAvatarUrl(request.getAvatarUrl().trim());
+            userRepo.save(user);
+        }
+
         return ResponseEntity.ok(Collections.singletonMap("message", "Đăng ký thành công!"));
+    }
+
+    // 👇 NEW: helper tạo Gravatar URL (identicon) theo email
+    private String buildGravatarUrl(String email) {
+        try {
+            String normalized = (email == null ? "" : email.trim().toLowerCase());
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(normalized.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            String hash = sb.toString();
+            // d=identicon: avatar tự sinh; s=160: kích thước
+            return "https://www.gravatar.com/avatar/" + hash + "?d=identicon&s=160";
+        } catch (Exception e) {
+            // fallback: generic avatar
+            return "https://www.gravatar.com/avatar/?d=mp&s=160";
+        }
     }
 }

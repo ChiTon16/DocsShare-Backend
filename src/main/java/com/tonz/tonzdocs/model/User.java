@@ -47,6 +47,9 @@ public class User {
     @JoinColumn(name = "major_id")
     private Major major;
 
+    @Column(name = "avatar_url", length = 512)
+    private String avatarUrl;
+
     public Integer getUserId() {
         return userId;
     }
@@ -105,4 +108,8 @@ public class User {
 
     @OneToMany(mappedBy = "user")
     private List<DownloadLog> downloads;
+
+    // Thêm getter/setter cho avatarUrl nếu bạn không dùng Lombok @Data:
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 }

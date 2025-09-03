@@ -11,10 +11,12 @@ import com.tonz.tonzdocs.repository.UserRepository;
 import com.tonz.tonzdocs.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -38,20 +40,12 @@ public class AuthController {
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
 
-    @PostMapping("/register")
-    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request,
-                                      BindingResult result) {
-        if (result.hasErrors()) {
-            // Trả về danh sách lỗi chi tiết
-            Map<String, String> errors = new HashMap<>();
-            result.getFieldErrors().forEach(err ->
-                    errors.put(err.getField(), err.getDefaultMessage())
-            );
-            return ResponseEntity.badRequest().body(errors);
-        }
-
-        // Xử lý đăng ký user...
-        return authService.register(request);
+    @PostMapping(value = "/register", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> register(
+            @RequestPart("data") RegisterRequest request,
+            @RequestPart(value = "avatar", required = false) MultipartFile avatar
+    ) {
+        return authService.register(request, avatar);
     }
 
     @PostMapping("/login")
