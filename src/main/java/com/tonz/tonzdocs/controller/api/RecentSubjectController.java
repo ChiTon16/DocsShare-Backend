@@ -20,11 +20,10 @@ public class RecentSubjectController {
 
     @GetMapping("/recent-subjects")
     public ResponseEntity<List<RecentSubjectDTO>> list(
-            @AuthenticationPrincipal CustomUserDetails user,   // đã lấy từ JWT
+            @AuthenticationPrincipal CustomUserDetails user, // sẽ KHÔNG null khi có JWT hợp lệ
             @RequestParam(defaultValue = "6") int size
     ) {
-        return ResponseEntity.ok(
-                recentSubjectService.getRecentSubjects(user.getUserId(), size)
-        );
+        size = Math.max(1, Math.min(size, 50));
+        return ResponseEntity.ok(recentSubjectService.getRecentSubjects(user.getUserId(), size));
     }
 }

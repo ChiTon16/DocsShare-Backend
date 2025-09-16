@@ -2,15 +2,21 @@ package com.tonz.tonzdocs.controller.api;
 
 import com.tonz.tonzdocs.dto.DocumentDTO;
 import com.tonz.tonzdocs.dto.DocumentViewDTO;
-import com.tonz.tonzdocs.model.Document;
+import com.tonz.tonzdocs.dto.RatingSummaryDTO;
 import com.tonz.tonzdocs.model.RecentView;
 import com.tonz.tonzdocs.repository.DocumentRepository;
 import com.tonz.tonzdocs.repository.RecentViewRepository;
 import com.tonz.tonzdocs.repository.UserRepository;
 import com.tonz.tonzdocs.security.CustomUserDetails;
 import com.tonz.tonzdocs.service.DocumentService;
+import com.tonz.tonzdocs.service.RatingService;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static com.tonz.tonzdocs.repository.spec.DocumentSpecs.*;
+
 @RestController
 @RequestMapping("/api/documents")
 @RequiredArgsConstructor
@@ -31,8 +39,15 @@ public class DocumentController {
     private final UserRepository userRepo;
     private final RecentViewRepository recentViewRepo;
     private final DocumentService documentService;
+    private final RatingService ratingService;
 
-    // ---- Thumbnail: trả THẲNG ảnh PNG (không 302, public/private đều dùng được khi service xử lý) ----
+    /** Helper: lấy userId từ principal hoặc null nếu anonymous */
+    private Integer extractUserId(Object principal) {
+        if (principal instanceof CustomUserDetails p) return p.getUserId();
+        return null;
+    }
+
+    // ---- Thumbnail ----
     @GetMapping(value = "/{documentId}/thumbnail", produces = MediaType.IMAGE_PNG_VALUE)
     public ResponseEntity<byte[]> getThumbnail(
             @PathVariable Integer documentId,
@@ -49,35 +64,60 @@ public class DocumentController {
                 .body(png);
     }
 
-    // ---- OPEN & TRACK: click để mở tài liệu (ghi recent) ----
-    @PostMapping("/{id}/open")
+    // ---- OPEN & TRACK (GET/POST đều được) ----
+    @RequestMapping(value = "/{id}/open", method = { RequestMethod.GET, RequestMethod.POST })
     public ResponseEntity<DocumentViewDTO> open(
-            @AuthenticationPrincipal CustomUserDetails principal,
+            @AuthenticationPrincipal Object principal,
             @PathVariable Integer id
     ) {
-        var user = userRepo.findById(principal.getUserId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
         var doc = documentRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found"));
 
+        Integer userId = extractUserId(principal);
         var now = LocalDateTime.now();
-        var rv = recentViewRepo.findByUserUserIdAndDocumentDocumentId(
-                        user.getUserId(), doc.getDocumentId()
-                )
-                .orElseGet(() -> {
-                    var n = new RecentView();
-                    n.setUser(user);
-                    n.setDocument(doc);
-                    n.setFirstOpenedAt(now);
-                    n.setLastPage(1);
-                    n.setPercent(0d);
-                    return n;
-                });
-        rv.setViewedAt(now);
-        recentViewRepo.save(rv);
 
-        // totalPages có thể tính bằng PdfBox nếu bạn đã có PdfService; để null cho nhẹ nhàng.
-        Integer totalPages = null;
+        Integer lastPage = null;
+        Double  percent  = null;
+        LocalDateTime viewedAt = null;
+
+        if (userId != null) {
+            var user = userRepo.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+            var rv = recentViewRepo.findByUserUserIdAndDocumentDocumentId(user.getUserId(), doc.getDocumentId())
+                    .orElseGet(() -> {
+                        var n = new RecentView();
+                        n.setUser(user);
+                        n.setDocument(doc);
+                        n.setFirstOpenedAt(now);
+                        n.setLastPage(1);
+                        n.setPercent(0d);
+                        return n;
+                    });
+
+            final long VIEW_GAP_MINUTES = 10;
+            LocalDateTime lastViewed = rv.getViewedAt();
+            boolean shouldIncreaseView =
+                    (lastViewed == null) || Duration.between(lastViewed, now).toMinutes() >= VIEW_GAP_MINUTES;
+
+            if (shouldIncreaseView) {
+                doc.setViewCount(doc.getViewCount() + 1);
+                documentRepo.save(doc);
+            }
+
+            rv.setViewedAt(now);
+            recentViewRepo.save(rv);
+
+            lastPage = rv.getLastPage();
+            percent  = rv.getPercent();
+            viewedAt = rv.getViewedAt();
+        } else {
+            // anonymous: tăng view luôn (hoặc tùy bạn throttle theo cookie)
+            doc.setViewCount(doc.getViewCount() + 1);
+            documentRepo.save(doc);
+        }
+
+        Integer totalPages = null; // nếu có thể tính thì set
 
         var dto = new DocumentViewDTO(
                 doc.getDocumentId(),
@@ -88,19 +128,19 @@ public class DocumentController {
                 doc.getUser() != null ? doc.getUser().getName() : null,
                 doc.getSubject() != null ? doc.getSubject().getSubjectId() : null,
                 doc.getSubject() != null ? doc.getSubject().getName() : null,
-                rv.getLastPage(),
-                rv.getPercent(),
-                rv.getViewedAt(),
+                lastPage,
+                percent,
+                viewedAt,
                 totalPages,
                 "/viewer/" + doc.getDocumentId()
         );
         return ResponseEntity.ok(dto);
     }
 
-    // ---- STREAM PDF: phục vụ iframe/PDF.js, hỗ trợ Range ----
+    // ---- STREAM PDF: hỗ trợ Range (giữ code trong controller) ----
     @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<InputStreamResource> streamPdf(
-            @AuthenticationPrincipal CustomUserDetails principal,
+            @AuthenticationPrincipal Object principal,
             @PathVariable Integer id,
             @RequestHeader(value = "Range", required = false) String rangeHeader
     ) throws IOException {
@@ -110,7 +150,7 @@ public class DocumentController {
         var path = doc.getFilePath();
         if (path == null || path.isBlank()) return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
 
-        // ===== HTTP/HTTPS (public) =====
+        // ===== CASE 1: HTTP/HTTPS (public) =====
         if (path.startsWith("http://") || path.startsWith("https://")) {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_PDF);
@@ -140,7 +180,6 @@ public class DocumentController {
         }
 
         final long fileLength = file.length();
-
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_PDF);
         headers.setContentDisposition(ContentDisposition.inline().filename(file.getName()).build());
@@ -155,10 +194,10 @@ public class DocumentController {
             );
         }
 
-        // Parse range
-        java.util.List<org.springframework.http.HttpRange> ranges;
+        // Parse Range
+        List<HttpRange> ranges;
         try {
-            ranges = org.springframework.http.HttpRange.parseRanges(rangeHeader);
+            ranges = HttpRange.parseRanges(rangeHeader);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
                     .header("Content-Range", "bytes */" + fileLength)
@@ -208,8 +247,6 @@ public class DocumentController {
         return new ResponseEntity<>(new InputStreamResource(limited), headers, HttpStatus.PARTIAL_CONTENT);
     }
 
-
-
     // ---- Metadata ----
     @GetMapping
     public List<DocumentDTO> getAllDocuments() {
@@ -227,9 +264,80 @@ public class DocumentController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<?> searchDocuments(@RequestParam("q") String keyword) {
-        var results = documentRepo.findByTitleContainingIgnoreCase(keyword);
-        var dtos = results.stream().map(DocumentService::toDTO).collect(Collectors.toList());
-        return ResponseEntity.ok(dtos);
+    public ResponseEntity<?> searchDocuments(
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "subjectId", required = false) Integer subjectId,
+            @RequestParam(value = "uploaderId", required = false) Integer uploaderId,
+            @RequestParam(value = "schoolId", required = false) Integer schoolId,
+            @RequestParam(value = "year", required = false) Integer year,
+            // phân trang + sắp xếp
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size,
+            @RequestParam(value = "sort", defaultValue = "uploadTime,desc") String sort
+    ) {
+        // Parse sort: "field,dir"
+        Sort sortObj;
+        try {
+            String[] parts = sort.split(",", 2);
+            String field = parts[0];
+            String dir   = (parts.length > 1 ? parts[1] : "asc");
+            sortObj = "desc".equalsIgnoreCase(dir) ? Sort.by(field).descending() : Sort.by(field).ascending();
+        } catch (Exception e) {
+            sortObj = Sort.by("uploadTime").descending();
+        }
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100), sortObj);
+
+        var spec = allOf(
+                keyword(q),
+                subjectId(subjectId),
+                uploaderId(uploaderId),
+                schoolId(schoolId),
+                year(year)
+        );
+
+        Page<DocumentDTO> result = documentRepo.findAll(spec, pageable)
+                .map(DocumentService::toDTO);
+
+        return ResponseEntity.ok(Map.of(
+                "content", result.getContent(),
+                "page", result.getNumber(),
+                "size", result.getSize(),
+                "totalElements", result.getTotalElements(),
+                "totalPages", result.getTotalPages(),
+                "sort", sortObj.toString()
+        ));
+    }
+
+    // ---- Rating ----
+    @GetMapping("/{id}/rating")
+    public ResponseEntity<RatingSummaryDTO> getRatingSummary(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable Integer id
+    ) {
+        Integer userId = extractUserId(principal);
+        RatingSummaryDTO dto = (userId != null)
+                ? ratingService.getSummary(userId, id)
+                : ratingService.getSummary(-1, id);
+        return ResponseEntity.ok(dto);
+    }
+
+    @Data
+    static class RateRequest { private String action; }
+
+    @PostMapping("/{id}/rating")
+    public ResponseEntity<RatingSummaryDTO> rate(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable Integer id,
+            @RequestBody RateRequest req
+    ) {
+        Integer userId = extractUserId(principal);
+        if (userId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        int v = switch (req.getAction() == null ? "" : req.getAction().toLowerCase()) {
+            case "up", "upvote", "like" -> 1;
+            case "down", "downvote", "dislike" -> -1;
+            case "clear", "remove", "" -> 0;
+            default -> throw new IllegalArgumentException("action must be up | down | clear");
+        };
+        return ResponseEntity.ok(ratingService.setRating(userId, id, v));
     }
 }

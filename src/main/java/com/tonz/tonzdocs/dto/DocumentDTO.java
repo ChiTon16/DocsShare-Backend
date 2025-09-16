@@ -16,4 +16,9 @@ public class DocumentDTO {
 
     private Integer subjectId;
     private String subjectName;
+    private Double  score;
+
+    private Long upvoteCount;
+    private Long downvoteCount;
+    private Integer ratingPercent; // 0..100
 }

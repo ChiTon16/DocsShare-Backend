@@ -1,23 +1,23 @@
+// src/main/java/com/tonz/tonzdocs/dto/SubjectDTO.java
 package com.tonz.tonzdocs.dto;
 
 public class SubjectDTO {
-    private Integer id;
+    private Integer subjectId;
     private String name;
-    private String description;
+    private String code; // có/không tuỳ FE
 
-    public SubjectDTO(Integer id, String name, String description) {
-        this.id = id;
+    public SubjectDTO() {}
+    public SubjectDTO(Integer subjectId, String name, String code) {
+        this.subjectId = subjectId;
         this.name = name;
-        this.description = description;
+        this.code = code;
     }
 
-    // Getters
-    public Integer getId() { return id; }
+    public Integer getSubjectId() { return subjectId; }
     public String getName() { return name; }
-    public String getDescription() { return description; }
+    public String getCode() { return code; }
 
-    // Setters (nếu cần)
-    public void setId(Integer id) { this.id = id; }
+    public void setSubjectId(Integer subjectId) { this.subjectId = subjectId; }
     public void setName(String name) { this.name = name; }
-    public void setDescription(String description) { this.description = description; }
+    public void setCode(String code) { this.code = code; }
 }

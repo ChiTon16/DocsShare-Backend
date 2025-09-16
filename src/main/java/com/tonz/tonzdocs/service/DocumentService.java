@@ -29,13 +29,19 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final Cloudinary cloudinary;
 
-    // ====== map DTO (giữ nguyên) ======
+    // ====== map DTO (đã thêm rating) ======
     public static DocumentDTO toDTO(Document doc) {
         var dto = new DocumentDTO();
+
         dto.setDocumentId(doc.getDocumentId());
         dto.setTitle(doc.getTitle());
         dto.setFilePath(doc.getFilePath());
+
+        // Giữ đúng kiểu bạn đang dùng cho DTO (ở file này là LocalDateTime)
         dto.setUploadTime(doc.getUploadTime());
+        // Nếu DTO của bạn dùng String thì đổi dòng trên thành:
+        // dto.setUploadTime(doc.getUploadTime() != null ? doc.getUploadTime().toString() : null);
+
         if (doc.getUser() != null) {
             dto.setUserId(doc.getUser().getUserId());
             dto.setUserName(doc.getUser().getName());
@@ -44,8 +50,27 @@ public class DocumentService {
             dto.setSubjectId(doc.getSubject().getSubjectId());
             dto.setSubjectName(doc.getSubject().getName());
         }
+
+        // ---- Rating fields ----
+        long up = doc.getUpvoteCount();       // primitive -> không null
+        long dn = doc.getDownvoteCount();
+        long total = up + dn;
+
+
+        dto.setUpvoteCount(up);
+        dto.setDownvoteCount(dn);
+        dto.setRatingPercent(total > 0 ? (int) Math.round(up * 100.0 / total) : null);
+
+        // Nếu DocumentDTO.ratingPercent là Integer -> có thể để null khi chưa có vote
+        if (total > 0) {
+            dto.setRatingPercent((int) Math.round(up * 100.0 / (double) total));
+        } else {
+            dto.setRatingPercent(null); // nếu field là int primitive thì đổi thành 0
+        }
+
         return dto;
     }
+
 
     // ========= PUBLIC thumbnail =========
     public byte[] getThumbnail(Integer documentId, int page, int width) {

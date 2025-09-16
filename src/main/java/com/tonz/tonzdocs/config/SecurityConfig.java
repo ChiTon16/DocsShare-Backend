@@ -19,48 +19,55 @@ import java.util.List;
 public class SecurityConfig {
 
     @Autowired
-    private JwtFilter jwtFilter; // Bộ lọc đọc JWT cho nhóm /api/**
+    private JwtFilter jwtFilter; // chỉ áp cho /api/**
 
-    /**
-     * CORS chỉ cần cho nhóm /api/** (dev bằng Vite 5173 hoặc domain khác).
-     * Admin web & admin API chạy cùng origin => không cần CORS.
-     */
+    /* ------------ CORS (cho dev FE http://localhost:5173) ------------ */
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cors = new CorsConfiguration();
-        cors.setAllowedOrigins(List.of(
-                "http://localhost:5173"  // Vite dev (nếu bạn gọi /api/** từ FE)
-                // ,"https://web.example.com" // thêm domain production nếu có
-        ));
+        cors.setAllowedOrigins(List.of("http://localhost:5173")); // FE dev
         cors.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        cors.setAllowedHeaders(List.of("*"));
+        cors.setAllowedHeaders(List.of("Authorization","Content-Type","X-Requested-With","Accept"));
         cors.setExposedHeaders(List.of("Authorization","Location","Content-Disposition"));
         cors.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        // REST (JWT)
         source.registerCorsConfiguration("/api/**", cors);
+        // SockJS handshake, /ws/info, /ws/** long-polling
+        source.registerCorsConfiguration("/api/ws/**", cors);
         return source;
     }
 
-    /**
-     * (1) PUBLIC API: /api/**
-     * - Stateless + JWT
-     * - Dùng cho frontend tách rời (React/Vite, mobile...)
-     */
+    /* ------------ (1) PUBLIC API /api/** (stateless + JWT) ------------ */
     @Bean
     @Order(1)
     public SecurityFilterChain apiSecurity(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/**")
                 .csrf(csrf -> csrf.disable())
-                .cors(c -> {}) // dùng bean corsConfigurationSource() ở trên
+                .cors(c -> {}) // dùng bean ở trên
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Cho phép preflight
+                        // Preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
 
-                        // Các endpoint mở
-                        .requestMatchers("/api/auth/**", "/api/documents", "/api/subjects", "/api/schools/**", "/api/majors, \"/api/public/**\"").permitAll()
+                        // Các endpoint mở (SỬA CÚ PHÁP BỊ LỖI)
+                        .requestMatchers(
+                                "/api/auth/**",
+                                "/api/public/**",
+                                "/api/subjects/**",
+                                "/api/schools/**",
+                                "/api/majors/**",
+                                "/api/documents/**",
+                                "/api/comments/**"
+                        ).permitAll()
+
+                        // ✅ Cho phép bắt tay SockJS
+                        .requestMatchers("/api/ws/**").permitAll()
+
+                        // Chat REST cần JWT:
+                        .requestMatchers("/api/chat/**").authenticated()
 
                         // Còn lại cần JWT
                         .anyRequest().authenticated()
@@ -70,28 +77,24 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * (2) WEB + ADMIN (SSR): mọi thứ còn lại, bao gồm:
-     * - /admin/** (trang web)
-     * - /admin/api/** (AJAX từ trang admin)  -> DÙNG SESSION, KHÔNG DÙNG JWT
-     */
+    /* ------------ (2) WEB/ADMIN cho phần còn lại ------------ */
     @Bean
     @Order(2)
     public SecurityFilterChain webSecurity(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
-                        // Public assets/pages
                         .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico",
                                 "/login", "/login?logout", "/error").permitAll()
+
+                        // Cho phép preflight & handshake SockJS
+                        .requestMatchers(HttpMethod.OPTIONS, "/api/ws/**").permitAll()
+                        .requestMatchers("api/ws/**").permitAll()
 
                         // Admin AJAX dùng session
                         .requestMatchers(HttpMethod.OPTIONS, "/admin/api/**").permitAll()
                         .requestMatchers("/admin/api/**").hasRole("ADMIN")
-
-                        // Trang admin SSR
                         .requestMatchers("/admin/**").hasRole("ADMIN")
 
-                        // Mọi thứ khác yêu cầu đăng nhập
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form
@@ -107,9 +110,7 @@ public class SecurityConfig {
                         .deleteCookies("JSESSIONID")
                         .permitAll()
                 )
-                // AJAX admin không cần CSRF cho gọn (hoặc bạn tự gửi X-CSRF-TOKEN nếu muốn bật)
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/admin/api/**"))
-                // Session cho web
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED));
 
         return http.build();

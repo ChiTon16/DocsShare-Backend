@@ -37,4 +37,29 @@ public class Document {
 
     @OneToMany(mappedBy = "document")
     private List<DownloadLog> downloads;
+
+    @Column(name = "view_count", nullable = false)
+    private long viewCount = 0;
+
+    @Column(name = "download_count", nullable = false)
+    private long downloadCount = 0;
+
+    @Column(nullable = false)
+    private Long upvoteCount = 0L;
+
+    @Column(nullable = false)
+    private Long downvoteCount = 0L;
+
+    // getters/setters
+    public long getViewCount() { return viewCount; }
+    public void setViewCount(long v) { this.viewCount = v; }
+
+    public long getDownloadCount() { return downloadCount; }
+    public void setDownloadCount(long d) { this.downloadCount = d; }
+
+    public long getUpvoteCount() { return upvoteCount; }
+    public void setUpvoteCount(long u) { this.upvoteCount = u; }
+
+    public LocalDateTime getUploadTime() { return uploadTime; }
+    public void setUploadTime(LocalDateTime t) { this.uploadTime = t; }
 }
